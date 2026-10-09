@@ -7,11 +7,11 @@
     <meta property="og:title" content="PettingZoo Documentation" />
     <meta property="og:type" content="website" />
     <meta property="og:description" content="" />
-    <meta property="og:url" content="https://pettingzoo.farama.org/_modules/pettingzoo/utils/wrappers/black_death.html" /><meta name="twitter:card" content="summary_large_image"><link rel="index" title="Index" href="../../../../../genindex/" /><link rel="search" title="Search" href="../../../../../search/" />
-        <link rel="canonical" href="https://pettingzoo.farama.org/_modules/pettingzoo/utils/wrappers/black_death.html" />
+    <meta property="og:url" content="https://pettingzoo.farama.org/_modules/pettingzoo/utils/wrappers/nan_noop.html" /><meta name="twitter:card" content="summary_large_image"><link rel="index" title="Index" href="../../../../../genindex/" /><link rel="search" title="Search" href="../../../../../search/" />
+        <link rel="canonical" href="https://pettingzoo.farama.org/_modules/pettingzoo/utils/wrappers/nan_noop.html" />
 
     <link rel="shortcut icon" href="../../../../../_static/favicon.png"/><!-- Generated with Sphinx 7.4.7 and Celshast 0.0.1 -->
-        <title>pettingzoo.utils.wrappers.black_death - PettingZoo Documentation</title>
+        <title>pettingzoo.utils.wrappers.nan_noop - PettingZoo Documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/celshast.css?v=9fbfb63d" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/celshast-extensions.css?v=42bfddca" />
@@ -377,159 +377,136 @@
           </div>
           <article role="main">
             
-            <h1>Source code for pettingzoo.utils.wrappers.black_death</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""Wrapper that keeps departed Parallel agents visible until episode end."""</span>
+            <h1>Source code for pettingzoo.utils.wrappers.nan_noop</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""Wrappers that replace NaN actions with a caller-supplied no-op action."""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">gymnasium.spaces</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">gymnasium.spaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">Box</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing_extensions</span><span class="w"> </span><span class="kn">import</span> <span class="n">override</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">pettingzoo.utils.env</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActionType</span><span class="p">,</span> <span class="n">AgentID</span><span class="p">,</span> <span class="n">ParallelEnv</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pettingzoo.utils.env</span><span class="w"> </span><span class="kn">import</span> <span class="n">ActionType</span><span class="p">,</span> <span class="n">AECEnv</span><span class="p">,</span> <span class="n">AgentID</span><span class="p">,</span> <span class="n">ObsType</span><span class="p">,</span> <span class="n">ParallelEnv</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pettingzoo.utils.wrappers.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseWrapper</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pettingzoo.utils.wrappers.base_parallel</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseParallelWrapper</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_box_observation_space</span><span class="p">(</span><span class="n">space</span><span class="p">:</span> <span class="n">gymnasium</span><span class="o">.</span><span class="n">spaces</span><span class="o">.</span><span class="n">Space</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">agent</span><span class="p">:</span> <span class="n">AgentID</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Box</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return a Box observation space or raise a clear compatibility error."""</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">space</span><span class="p">,</span> <span class="n">Box</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
-            <span class="s2">"BlackDeathParallelV4 only supports Box observation spaces, "</span>
-            <span class="sa">f</span><span class="s2">"but agent </span><span class="si">{</span><span class="n">agent</span><span class="si">!r}</span><span class="s2"> has </span><span class="si">{</span><span class="n">space</span><span class="si">}</span><span class="s2">."</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_noop</span><span class="p">(</span>
+    <span class="n">space</span><span class="p">:</span> <span class="n">gymnasium</span><span class="o">.</span><span class="n">spaces</span><span class="o">.</span><span class="n">Space</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">no_op_action</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">agent</span><span class="p">:</span> <span class="n">Any</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">space</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">no_op_action</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"The no-op action </span><span class="si">{</span><span class="n">no_op_action</span><span class="si">!r}</span><span class="s2"> is outside the action space "</span>
+            <span class="sa">f</span><span class="s2">"for agent </span><span class="si">{</span><span class="n">agent</span><span class="si">!r}</span><span class="s2">: </span><span class="si">{</span><span class="n">space</span><span class="si">}</span><span class="s2">."</span>
         <span class="p">)</span>
-    <span class="k">return</span> <span class="n">space</span>
 
 
-<div class="viewcode-block" id="BlackDeathParallelV4">
-<a class="viewcode-back" href="../../../../../api/wrappers/pz_wrappers/#pettingzoo.utils.wrappers.BlackDeathParallelV4">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">BlackDeathParallelV4</span><span class="p">(</span><span class="n">BaseParallelWrapper</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ActionType</span><span class="p">]):</span>
-<span class="w">    </span><span class="sd">"""Keep the reset-time agent set visible until the whole episode ends.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_replace_nan</span><span class="p">(</span><span class="n">action</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">no_op_action</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">agent</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">action</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">action</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">action</span>
+    <span class="c1"># Also validate at replacement time for environments with dynamic agents.</span>
+    <span class="n">_check_noop</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">action_space</span><span class="p">(</span><span class="n">agent</span><span class="p">),</span> <span class="n">no_op_action</span><span class="p">,</span> <span class="n">agent</span><span class="p">)</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"Step received a NaN action </span><span class="si">{</span><span class="n">action</span><span class="si">}</span><span class="s2"> for agent </span><span class="si">{</span><span class="n">agent</span><span class="si">!r}</span><span class="s2">. "</span>
+        <span class="s2">"Taking the supplied no-op action."</span><span class="p">,</span>
+        <span class="n">stacklevel</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="c1"># A mutable replacement must not be shared between agents or steps.</span>
+    <span class="k">return</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">no_op_action</span><span class="p">)</span>
 
-<span class="sd">    When an agent leaves the wrapped environment early, subsequent steps expose</span>
-<span class="sd">    a zero-valued observation with the same shape and dtype as that agent's Box</span>
-<span class="sd">    observation space, zero reward, and an empty info dictionary. Actions for</span>
-<span class="sd">    departed agents are ignored and only actions for currently active wrapped</span>
-<span class="sd">    agents are forwarded.</span>
 
-<span class="sd">    To keep the public agent set stable, an early departure is reported as</span>
-<span class="sd">    terminated=False and truncated=False until the underlying episode ends.</span>
-<span class="sd">    The wrapper remembers the original cause of each departure and reports those</span>
-<span class="sd">    per-agent termination and truncation flags on the final step instead of</span>
-<span class="sd">    collapsing both causes into one done flag.</span>
+<div class="viewcode-block" id="NanNoopV1">
+<a class="viewcode-back" href="../../../../../api/wrappers/pz_wrappers/#pettingzoo.utils.wrappers.NanNoopV1">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NanNoopV1</span><span class="p">(</span><span class="n">BaseWrapper</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">ObsType</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">"""Replaces a numeric action containing a NaN with a supplied no-op action.</span>
 
-<span class="sd">    Agents that appear after reset are not supported because they would change</span>
-<span class="sd">    the fixed agent set exposed by this wrapper.</span>
+<span class="sd">    A warning is emitted for each replacement. Numeric scalars and arrays are</span>
+<span class="sd">    supported. Actions without NaNs, and ``None`` actions for dead agents, pass</span>
+<span class="sd">    through unchanged. The advertised action spaces are not modified.</span>
 
-<span class="sd">    :param env: The Parallel environment to wrap.</span>
+<span class="sd">    The same caller-supplied no-op value is used for every agent. It must belong</span>
+<span class="sd">    to each agent's action space, including its shape and dtype, or a ``ValueError``</span>
+<span class="sd">    is raised. Known agents are checked at construction and the affected agent is</span>
+<span class="sd">    checked on each replacement. Each replacement receives a copy of the value.</span>
+
+<span class="sd">    :param env: The AEC environment to wrap.</span>
+<span class="sd">    :param no_op_action: The no-op action, valid for all affected agents.</span>
 <span class="sd">    """</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ParallelEnv</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">ActionType</span><span class="p">]):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">AECEnv</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">ObsType</span><span class="p">,</span> <span class="n">ActionType</span><span class="p">],</span> <span class="n">no_op_action</span><span class="p">:</span> <span class="n">ActionType</span>
+    <span class="p">):</span>
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">AECEnv</span><span class="p">),</span> <span class="p">(</span>
+            <span class="s2">"NanNoopV1 is only compatible with AEC environments, "</span>
+            <span class="s2">"use NanNoopParallelV1 instead."</span>
+        <span class="p">)</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">AgentID</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_zero_observations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_stored_terminations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_stored_truncations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-
+        <span class="bp">self</span><span class="o">.</span><span class="n">no_op_action</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">no_op_action</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">"possible_agents"</span><span class="p">,</span> <span class="p">[]):</span>
-            <span class="n">_box_observation_space</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">observation_space</span><span class="p">(</span><span class="n">agent</span><span class="p">),</span> <span class="n">agent</span><span class="p">)</span>
+            <span class="n">_check_noop</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">action_space</span><span class="p">(</span><span class="n">agent</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_op_action</span><span class="p">,</span> <span class="n">agent</span><span class="p">)</span>
 
     <span class="nd">@override</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">options</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
-        <span class="n">observations</span><span class="p">,</span> <span class="n">infos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">reset</span><span class="p">(</span><span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span> <span class="n">options</span><span class="o">=</span><span class="n">options</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">agents</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">agents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_stored_terminations</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_stored_truncations</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_zero_observations</span> <span class="o">=</span> <span class="p">{}</span>
-
-        <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">:</span>
-            <span class="n">space</span> <span class="o">=</span> <span class="n">_box_observation_space</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">observation_space</span><span class="p">(</span><span class="n">agent</span><span class="p">),</span> <span class="n">agent</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_zero_observations</span><span class="p">[</span><span class="n">agent</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">space</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">space</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="p">(</span>
-            <span class="p">{</span>
-                <span class="n">agent</span><span class="p">:</span> <span class="n">observations</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_zero_observations</span><span class="p">[</span><span class="n">agent</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
-                <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span>
-            <span class="p">},</span>
-            <span class="p">{</span><span class="n">agent</span><span class="p">:</span> <span class="n">infos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="p">{})</span> <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">},</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">step</span><span class="p">(</span>
+            <span class="n">_replace_nan</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_op_action</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">agent_selection</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span>
         <span class="p">)</span>
+
+    <span class="nd">@override</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"NanNoopV1&lt;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="si">!s}</span><span class="s2">&gt;"</span></div>
+
+
+
+<div class="viewcode-block" id="NanNoopParallelV1">
+<a class="viewcode-back" href="../../../../../api/wrappers/pz_wrappers/#pettingzoo.utils.wrappers.NanNoopParallelV1">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NanNoopParallelV1</span><span class="p">(</span><span class="n">BaseParallelWrapper</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">ObsType</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+<span class="w">    </span><span class="sd">"""Replaces each numeric action containing a NaN with a supplied no-op action.</span>
+
+<span class="sd">    Each supplied action is checked independently and a warning is emitted for</span>
+<span class="sd">    each replacement. Numeric scalars and arrays are supported. Actions without</span>
+<span class="sd">    NaNs pass through unchanged, and the input dictionary is not modified.</span>
+
+<span class="sd">    As in :class:`NanNoopV1`, the same caller-supplied no-op value must be valid</span>
+<span class="sd">    in every affected agent's action space. Known agents are checked at</span>
+<span class="sd">    construction and the affected agent is checked on each replacement. Each</span>
+<span class="sd">    replacement receives a copy. The advertised action spaces are not modified.</span>
+
+<span class="sd">    :param env: The parallel environment to wrap.</span>
+<span class="sd">    :param no_op_action: The no-op action, valid for all affected agents.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">env</span><span class="p">:</span> <span class="n">ParallelEnv</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">ObsType</span><span class="p">,</span> <span class="n">ActionType</span><span class="p">],</span> <span class="n">no_op_action</span><span class="p">:</span> <span class="n">ActionType</span>
+    <span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">env</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">no_op_action</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">no_op_action</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s2">"possible_agents"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="n">_check_noop</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">action_space</span><span class="p">(</span><span class="n">agent</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_op_action</span><span class="p">,</span> <span class="n">agent</span><span class="p">)</span>
 
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">step</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">ActionType</span><span class="p">]</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">actions</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span>
-        <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+        <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="n">ObsType</span><span class="p">],</span>
         <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
         <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">bool</span><span class="p">],</span>
         <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">bool</span><span class="p">],</span>
         <span class="nb">dict</span><span class="p">[</span><span class="n">AgentID</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
     <span class="p">]:</span>
-        <span class="n">active_agents</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">agents</span><span class="p">)</span>
-        <span class="n">unexpected</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">agent</span> <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="n">active_agents</span> <span class="k">if</span> <span class="n">agent</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span>
-        <span class="p">]</span>
-        <span class="k">if</span> <span class="n">unexpected</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">"BlackDeathParallelV4 does not support agents appearing after reset: "</span>
-                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">unexpected</span><span class="si">}</span><span class="s2">."</span>
-            <span class="p">)</span>
-
-        <span class="n">active_actions</span> <span class="o">=</span> <span class="p">{</span><span class="n">agent</span><span class="p">:</span> <span class="n">actions</span><span class="p">[</span><span class="n">agent</span><span class="p">]</span> <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="n">active_agents</span><span class="p">}</span>
-        <span class="n">observations</span><span class="p">,</span> <span class="n">rewards</span><span class="p">,</span> <span class="n">terminations</span><span class="p">,</span> <span class="n">truncations</span><span class="p">,</span> <span class="n">infos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">step</span><span class="p">(</span>
-            <span class="n">active_actions</span>
-        <span class="p">)</span>
-
-        <span class="n">unexpected</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">agent</span> <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">agents</span> <span class="k">if</span> <span class="n">agent</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span>
-        <span class="p">]</span>
-        <span class="k">if</span> <span class="n">unexpected</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                <span class="s2">"BlackDeathParallelV4 does not support agents appearing after reset: "</span>
-                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">unexpected</span><span class="si">}</span><span class="s2">."</span>
-            <span class="p">)</span>
-
-        <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">terminations</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_stored_terminations</span><span class="p">[</span><span class="n">agent</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-            <span class="k">if</span> <span class="n">truncations</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">_stored_truncations</span><span class="p">[</span><span class="n">agent</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
-
-        <span class="n">episode_done</span> <span class="o">=</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">agents</span>
-        <span class="k">if</span> <span class="n">episode_done</span><span class="p">:</span>
-            <span class="n">total_terminations</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stored_terminations</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-            <span class="n">total_truncations</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stored_truncations</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">agents</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">total_terminations</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-            <span class="n">total_truncations</span> <span class="o">=</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">agents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-
-        <span class="n">total_observations</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">agent</span><span class="p">:</span> <span class="n">observations</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_zero_observations</span><span class="p">[</span><span class="n">agent</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
-            <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span>
-        <span class="p">}</span>
-        <span class="n">total_rewards</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">agent</span><span class="p">:</span> <span class="n">rewards</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span>
-        <span class="p">}</span>
-        <span class="n">total_infos</span> <span class="o">=</span> <span class="p">{</span><span class="n">agent</span><span class="p">:</span> <span class="n">infos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="p">{})</span> <span class="k">for</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_episode_agents</span><span class="p">}</span>
-
-        <span class="k">return</span> <span class="p">(</span>
-            <span class="n">total_observations</span><span class="p">,</span>
-            <span class="n">total_rewards</span><span class="p">,</span>
-            <span class="n">total_terminations</span><span class="p">,</span>
-            <span class="n">total_truncations</span><span class="p">,</span>
-            <span class="n">total_infos</span><span class="p">,</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="o">.</span><span class="n">step</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="n">agent</span><span class="p">:</span> <span class="n">_replace_nan</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">no_op_action</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">agent</span><span class="p">,</span> <span class="n">action</span> <span class="ow">in</span> <span class="n">actions</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">}</span>
         <span class="p">)</span>
 
     <span class="nd">@override</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">"BlackDeathParallelV4&lt;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="si">!s}</span><span class="s2">&gt;"</span></div>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"NanNoopParallelV1&lt;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">env</span><span class="si">!s}</span><span class="s2">&gt;"</span></div>
 
 </pre></div>
           </article>
